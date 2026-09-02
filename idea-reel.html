@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Idea Reel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14171c;
+    --panel:#1e2229;
+    --panel-light:#262b33;
+    --panel-line:#323945;
+    --amber:#e8a33d;
+    --amber-dim:#8a6326;
+    --red:#d64550;
+    --paper:#f0ede6;
+    --muted:#8b8f98;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--paper);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    padding:28px 16px 60px;
+  }
+  .device{
+    width:100%;
+    max-width:420px;
+  }
+  .header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-bottom:18px;
+    padding:0 2px;
+  }
+  .header h1{
+    font-family:'Oswald',sans-serif;
+    font-weight:600;
+    letter-spacing:0.14em;
+    font-size:20px;
+    text-transform:uppercase;
+    margin:0;
+    color:var(--paper);
+  }
+  .header .sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--muted);
+    letter-spacing:0.05em;
+  }
+  .deck{
+    background:linear-gradient(180deg,var(--panel-light),var(--panel));
+    border:1px solid var(--panel-line);
+    border-radius:14px;
+    padding:22px 20px 20px;
+    box-shadow:0 20px 40px -20px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+  .reels{
+    display:flex;
+    justify-content:center;
+    gap:56px;
+    margin-bottom:16px;
+  }
+  .reel{
+    width:54px;height:54px;border-radius:50%;
+    background:radial-gradient(circle at 50% 50%, var(--panel-line) 0 8px, var(--bg) 9px 22px, var(--panel-line) 23px 26px, transparent 27px);
+    position:relative;
+    transition:transform 0.1s linear;
+  }
+  .reel::after{
+    content:'';
+    position:absolute;inset:0;
+    border-radius:50%;
+    border:1px solid rgba(232,163,61,0.15);
+  }
+  .reel.spin{animation:spin 2.2s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .meter-window{
+    background:var(--bg);
+    border:1px solid var(--panel-line);
+    border-radius:8px;
+    height:84px;
+    margin-bottom:16px;
+    position:relative;
+    overflow:hidden;
+  }
+  .meter-window canvas{width:100%;height:100%;display:block;}
+  .meter-label{
+    position:absolute;top:6px;left:8px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:9px;letter-spacing:0.1em;
+    color:var(--amber-dim);
+    text-transform:uppercase;
+  }
+
+  .counter{
+    text-align:center;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:28px;
+    letter-spacing:0.08em;
+    color:var(--amber);
+    margin-bottom:18px;
+    text-shadow:0 0 12px rgba(232,163,61,0.25);
+  }
+
+  .transport{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:18px;
+    margin-bottom:6px;
+  }
+  .rec-btn{
+    width:66px;height:66px;
+    border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #e85c66, var(--red));
+    border:3px solid #3a1418;
+    cursor:pointer;
+    box-shadow:0 4px 14px rgba(214,69,80,0.35);
+    display:flex;align-items:center;justify-content:center;
+    transition:transform 0.08s ease;
+  }
+  .rec-btn:active{transform:scale(0.94);}
+  .rec-btn .dot{width:22px;height:22px;border-radius:50%;background:#fff;opacity:0.15;}
+  .rec-btn.armed .dot{background:#fff;opacity:0.9;box-shadow:0 0 10px #fff;}
+  .rec-btn.recording{
+    border-radius:12px;
+  }
+  .rec-btn.recording .dot{
+    border-radius:3px;width:18px;height:18px;background:#fff;opacity:1;
+  }
+  .status-text{
+    text-align:center;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    letter-spacing:0.12em;
+    color:var(--muted);
+    text-transform:uppercase;
+    margin-bottom:20px;
+    min-height:14px;
+  }
+  .status-text.live{color:var(--red);}
+
+  .capture-form{
+    display:none;
+    border-top:1px dashed var(--panel-line);
+    padding-top:18px;
+    margin-top:4px;
+  }
+  .capture-form.show{display:block;}
+
+  .playback-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:16px;
+  }
+  audio{flex:1;height:34px;}
+  audio::-webkit-media-controls-panel{background:var(--panel-light);}
+
+  .field{margin-bottom:14px;}
+  .field label{
+    display:block;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:9px;
+    letter-spacing:0.12em;
+    color:var(--amber-dim);
+    text-transform:uppercase;
+    margin-bottom:6px;
+  }
+  .label-tape{
+    background:var(--paper);
+    color:#2a2a28;
+    border-radius:3px;
+    padding:10px 12px;
+    transform:rotate(-0.4deg);
+    box-shadow:0 3px 8px rgba(0,0,0,0.3);
+  }
+  .label-tape input{
+    width:100%;
+    border:none;
+    background:transparent;
+    font-family:'Oswald',sans-serif;
+    font-size:16px;
+    font-weight:500;
+    letter-spacing:0.02em;
+    outline:none;
+    color:#2a2a28;
+  }
+  .label-tape input::placeholder{color:#8a8578;}
+
+  .tag-input-row{
+    display:flex;
+    gap:8px;
+  }
+  .tag-input-row input{
+    flex:1;
+    background:var(--panel-light);
+    border:1px solid var(--panel-line);
+    border-radius:6px;
+    padding:9px 10px;
+    color:var(--paper);
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    outline:none;
+  }
+  .tag-input-row input:focus{border-color:var(--amber-dim);}
+  .tag-input-row button{
+    background:var(--panel-line);
+    border:none;
+    border-radius:6px;
+    color:var(--paper);
+    padding:0 14px;
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .chips{
+    display:flex;flex-wrap:wrap;gap:6px;
+    margin-top:10px;
+  }
+  .chip{
+    background:rgba(232,163,61,0.12);
+    border:1px solid rgba(232,163,61,0.35);
+    color:var(--amber);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    padding:4px 9px;
+    border-radius:20px;
+    display:flex;align-items:center;gap:6px;
+  }
+  .chip button{
+    background:none;border:none;color:var(--amber);
+    cursor:pointer;font-size:12px;line-height:1;opacity:0.7;padding:0;
+  }
+
+  .action-row{
+    display:flex;
+    gap:10px;
+    margin-top:18px;
+  }
+  .btn{
+    flex:1;
+    padding:12px;
+    border-radius:8px;
+    border:none;
+    font-family:'Oswald',sans-serif;
+    font-weight:600;
+    letter-spacing:0.06em;
+    font-size:13px;
+    text-transform:uppercase;
+    cursor:pointer;
+  }
+  .btn-save{background:var(--amber);color:#2a1c05;}
+  .btn-discard{background:transparent;color:var(--muted);border:1px solid var(--panel-line);}
+
+  .rack-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin:28px 0 12px;
+    padding:0 2px;
+  }
+  .rack-header h2{
+    font-family:'Oswald',sans-serif;
+    font-size:13px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin:0;
+  }
+  .rack-count{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--amber-dim);
+  }
+
+  .idea-card{
+    background:var(--panel);
+    border:1px solid var(--panel-line);
+    border-left:3px solid var(--amber-dim);
+    border-radius:8px;
+    padding:12px 14px;
+    margin-bottom:10px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .idea-play{
+    width:36px;height:36px;border-radius:50%;
+    background:var(--panel-light);
+    border:1px solid var(--panel-line);
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;flex-shrink:0;
+    color:var(--amber);
+    font-size:13px;
+  }
+  .idea-meta{flex:1;min-width:0;}
+  .idea-title{
+    font-family:'Oswald',sans-serif;
+    font-size:14px;
+    font-weight:500;
+    color:var(--paper);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .idea-sub{
+    display:flex;gap:8px;align-items:center;
+    margin-top:4px;
+    flex-wrap:wrap;
+  }
+  .idea-sub .idea-time{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    color:var(--muted);
+  }
+  .idea-sub .mini-chip{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    color:var(--amber-dim);
+  }
+  .empty-rack{
+    text-align:center;
+    padding:30px 10px;
+    color:var(--muted);
+    font-size:13px;
+    border:1px dashed var(--panel-line);
+    border-radius:8px;
+  }
+  .note{
+    margin-top:22px;
+    font-size:11px;
+    color:var(--muted);
+    text-align:center;
+    line-height:1.5;
+    padding:0 8px;
+  }
+</style>
+</head>
+<body>
+<div class="device">
+  <div class="header">
+    <h1>Idea Reel</h1>
+    <div class="sub" id="dateNow"></div>
+  </div>
+
+  <div class="deck">
+    <div class="reels">
+      <div class="reel" id="reelL"></div>
+      <div class="reel" id="reelR"></div>
+    </div>
+
+    <div class="meter-window">
+      <div class="meter-label">Input</div>
+      <canvas id="meterCanvas"></canvas>
+    </div>
+
+    <div class="counter" id="counter">00:00</div>
+
+    <div class="transport">
+      <div class="rec-btn" id="recBtn"><div class="dot"></div></div>
+    </div>
+    <div class="status-text" id="statusText">Tap to record</div>
+
+    <div class="capture-form" id="captureForm">
+      <div class="playback-row">
+        <audio id="playbackAudio" controls></audio>
+      </div>
+
+      <div class="field">
+        <label>Title</label>
+        <div class="label-tape">
+          <input type="text" id="titleInput" placeholder="Untitled idea" maxlength="60">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Tags</label>
+        <div class="tag-input-row">
+          <input type="text" id="tagInput" placeholder="e.g. verse, chorus, 90bpm" maxlength="20">
+          <button id="addTagBtn" type="button">Add</button>
+        </div>
+        <div class="chips" id="chipRow"></div>
+      </div>
+
+      <div class="action-row">
+        <button class="btn btn-discard" id="discardBtn" type="button">Discard</button>
+        <button class="btn btn-save" id="saveBtn" type="button">Save Idea</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="rack-header">
+    <h2>Saved Ideas</h2>
+    <span class="rack-count" id="rackCount">0</span>
+  </div>
+  <div id="ideaRack"></div>
+
+  <div class="note">Recordings live in this session only — reload clears them. Saving to your device is the next step we'll build.</div>
+</div>
+
+<script>
+const dateNow = document.getElementById('dateNow');
+dateNow.textContent = new Date().toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+
+const recBtn = document.getElementById('recBtn');
+const statusText = document.getElementById('statusText');
+const counter = document.getElementById('counter');
+const reelL = document.getElementById('reelL');
+const reelR = document.getElementById('reelR');
+const meterCanvas = document.getElementById('meterCanvas');
+const meterCtx = meterCanvas.getContext('2d');
+const captureForm = document.getElementById('captureForm');
+const playbackAudio = document.getElementById('playbackAudio');
+const titleInput = document.getElementById('titleInput');
+const tagInput = document.getElementById('tagInput');
+const addTagBtn = document.getElementById('addTagBtn');
+const chipRow = document.getElementById('chipRow');
+const saveBtn = document.getElementById('saveBtn');
+const discardBtn = document.getElementById('discardBtn');
+const ideaRack = document.getElementById('ideaRack');
+const rackCount = document.getElementById('rackCount');
+
+let mediaRecorder, audioChunks = [], stream, audioCtx, analyser, animId;
+let recording = false, startTime = 0, timerInterval;
+let currentBlob = null, currentUrl = null;
+let tags = [];
+let ideas = [];
+
+function resizeCanvas(){
+  meterCanvas.width = meterCanvas.clientWidth * devicePixelRatio;
+  meterCanvas.height = meterCanvas.clientHeight * devicePixelRatio;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function drawIdleMeter(){
+  meterCtx.clearRect(0,0,meterCanvas.width,meterCanvas.height);
+  const barCount = 40;
+  const w = meterCanvas.width / barCount;
+  meterCtx.fillStyle = 'rgba(232,163,61,0.12)';
+  for(let i=0;i<barCount;i++){
+    meterCtx.fillRect(i*w+2, meterCanvas.height-4, w-4, 4);
+  }
+}
+drawIdleMeter();
+
+function drawLiveMeter(){
+  if(!analyser) return;
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+  analyser.getByteFrequencyData(dataArray);
+
+  meterCtx.clearRect(0,0,meterCanvas.width,meterCanvas.height);
+  const barCount = 40;
+  const step = Math.floor(bufferLength/barCount);
+  const w = meterCanvas.width / barCount;
+  for(let i=0;i<barCount;i++){
+    const v = dataArray[i*step] / 255;
+    const h = Math.max(4, v * meterCanvas.height);
+    const hue = v > 0.75 ? '#d64550' : '#e8a33d';
+    meterCtx.fillStyle = hue;
+    meterCtx.fillRect(i*w+2, meterCanvas.height-h, w-4, h);
+  }
+  animId = requestAnimationFrame(drawLiveMeter);
+}
+
+function formatTime(sec){
+  const m = Math.floor(sec/60).toString().padStart(2,'0');
+  const s = Math.floor(sec%60).toString().padStart(2,'0');
+  return m+':'+s;
+}
+
+async function startRecording(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(err){
+    statusText.textContent = 'Mic access denied';
+    return;
+  }
+
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(stream);
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+  source.connect(analyser);
+
+  audioChunks = [];
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+  mediaRecorder.onstop = onRecordingStop;
+  mediaRecorder.start();
+
+  recording = true;
+  startTime = Date.now();
+  recBtn.classList.add('recording');
+  reelL.classList.add('spin');
+  reelR.classList.add('spin');
+  statusText.textContent = 'Recording…';
+  statusText.classList.add('live');
+  drawLiveMeter();
+
+  timerInterval = setInterval(()=>{
+    counter.textContent = formatTime((Date.now()-startTime)/1000);
+  }, 200);
+}
+
+function stopRecording(){
+  if(mediaRecorder && mediaRecorder.state !== 'inactive'){
+    mediaRecorder.stop();
+  }
+  stream.getTracks().forEach(t=>t.stop());
+  cancelAnimationFrame(animId);
+  clearInterval(timerInterval);
+  recording = false;
+  recBtn.classList.remove('recording');
+  reelL.classList.remove('spin');
+  reelR.classList.remove('spin');
+  statusText.textContent = 'Tap to record';
+  statusText.classList.remove('live');
+  drawIdleMeter();
+  if(audioCtx) audioCtx.close();
+}
+
+function onRecordingStop(){
+  currentBlob = new Blob(audioChunks, {type:'audio/webm'});
+  currentUrl = URL.createObjectURL(currentBlob);
+  playbackAudio.src = currentUrl;
+  captureForm.classList.add('show');
+  titleInput.focus();
+}
+
+recBtn.addEventListener('click', ()=>{
+  if(!recording){
+    captureForm.classList.remove('show');
+    counter.textContent = '00:00';
+    startRecording();
+  } else {
+    stopRecording();
+  }
+});
+
+function renderChips(){
+  chipRow.innerHTML = '';
+  tags.forEach((tag, i)=>{
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.innerHTML = `<span>${tag}</span>`;
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', ()=>{
+      tags.splice(i,1);
+      renderChips();
+    });
+    chip.appendChild(removeBtn);
+    chipRow.appendChild(chip);
+  });
+}
+
+function addTag(){
+  const val = tagInput.value.trim();
+  if(val && !tags.includes(val)){
+    tags.push(val);
+    renderChips();
+  }
+  tagInput.value = '';
+  tagInput.focus();
+}
+
+addTagBtn.addEventListener('click', addTag);
+tagInput.addEventListener('keydown', e=>{
+  if(e.key === 'Enter'){ e.preventDefault(); addTag(); }
+});
+
+function resetForm(){
+  captureForm.classList.remove('show');
+  titleInput.value = '';
+  tagInput.value = '';
+  tags = [];
+  renderChips();
+  currentBlob = null;
+  currentUrl = null;
+  counter.textContent = '00:00';
+}
+
+discardBtn.addEventListener('click', resetForm);
+
+saveBtn.addEventListener('click', ()=>{
+  if(!currentBlob){ return; }
+  const idea = {
+    id: Date.now(),
+    title: titleInput.value.trim() || 'Untitled idea',
+    tags: [...tags],
+    url: currentUrl,
+    time: new Date()
+  };
+  ideas.unshift(idea);
+  renderRack();
+  resetForm();
+});
+
+function renderRack(){
+  rackCount.textContent = ideas.length;
+  if(ideas.length === 0){
+    ideaRack.innerHTML = '<div class="empty-rack">No ideas captured yet — hit record to catch the next one.</div>';
+    return;
+  }
+  ideaRack.innerHTML = '';
+  ideas.forEach(idea=>{
+    const card = document.createElement('div');
+    card.className = 'idea-card';
+
+    const playBtn = document.createElement('div');
+    playBtn.className = 'idea-play';
+    playBtn.textContent = '▶';
+    const audioEl = new Audio(idea.url);
+    playBtn.addEventListener('click', ()=>{
+      audioEl.currentTime = 0;
+      audioEl.play();
+      playBtn.textContent = '❚❚';
+      audioEl.onended = ()=> playBtn.textContent = '▶';
+    });
+
+    const meta = document.createElement('div');
+    meta.className = 'idea-meta';
+    const title = document.createElement('div');
+    title.className = 'idea-title';
+    title.textContent = idea.title;
+    const sub = document.createElement('div');
+    sub.className = 'idea-sub';
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'idea-time';
+    timeSpan.textContent = idea.time.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+    sub.appendChild(timeSpan);
+    idea.tags.forEach(t=>{
+      const tagSpan = document.createElement('span');
+      tagSpan.className = 'mini-chip';
+      tagSpan.textContent = '#'+t;
+      sub.appendChild(tagSpan);
+    });
+    meta.appendChild(title);
+    meta.appendChild(sub);
+
+    card.appendChild(playBtn);
+    card.appendChild(meta);
+    ideaRack.appendChild(card);
+  });
+}
+
+renderRack();
+</script>
+</body>
+</html>
