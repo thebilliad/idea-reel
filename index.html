@@ -302,6 +302,9 @@
     cursor:pointer;flex-shrink:0;
     color:var(--amber);
     font-size:13px;
+    padding:0;
+    font-family:inherit;
+    -webkit-appearance:none;appearance:none;
   }
   .idea-meta{flex:1;min-width:0;}
   .idea-title{
@@ -342,6 +345,86 @@
     line-height:1.5;
     padding:0 8px;
   }
+
+  /* ---- Search and filter ---- */
+  .finder{margin-bottom:14px;}
+  .finder[hidden]{display:none;}
+  .finder input{
+    width:100%;
+    background:var(--panel);
+    border:1px solid var(--panel-line);
+    border-radius:8px;
+    padding:10px 12px;
+    color:var(--paper);
+    font-family:'Inter',sans-serif;
+    font-size:16px;
+    outline:none;
+    -webkit-appearance:none;appearance:none;
+  }
+  .finder input:focus{border-color:var(--amber-dim);}
+  .finder input::placeholder{color:var(--muted);}
+  .filter-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+  .filter-chips:empty{display:none;}
+  .filter-chip{
+    background:transparent;
+    border:1px solid var(--panel-line);
+    color:var(--muted);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    padding:5px 10px;
+    border-radius:20px;
+    cursor:pointer;
+  }
+  .filter-chip.on{
+    background:rgba(232,163,61,0.15);
+    border-color:rgba(232,163,61,0.5);
+    color:var(--amber);
+  }
+
+  /* ---- Idea card actions ---- */
+  .idea-play.playing{background:rgba(232,163,61,0.15);border-color:var(--amber-dim);}
+  .idea-actions{display:flex;gap:2px;flex-shrink:0;}
+  .icon-btn{
+    width:34px;height:34px;border-radius:8px;
+    background:transparent;border:none;
+    color:var(--muted);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    padding:0;
+  }
+  .icon-btn:active{background:var(--panel-light);color:var(--paper);}
+  .icon-btn.danger:active{color:var(--red);}
+  .icon-btn svg{width:17px;height:17px;}
+
+  /* ---- Dialogs ---- */
+  .btn-danger{background:var(--red);color:#fff;}
+  .modal-backdrop{
+    position:fixed;inset:0;
+    background:rgba(8,10,13,0.72);
+    display:flex;align-items:center;justify-content:center;
+    padding:20px;
+    z-index:50;
+  }
+  .modal-backdrop[hidden]{display:none;}
+  .modal{
+    width:100%;max-width:380px;
+    background:linear-gradient(180deg,var(--panel-light),var(--panel));
+    border:1px solid var(--panel-line);
+    border-radius:14px;
+    padding:20px;
+    box-shadow:0 24px 48px -16px rgba(0,0,0,0.7);
+  }
+  .modal h3{
+    font-family:'Oswald',sans-serif;
+    font-weight:600;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    font-size:15px;
+    margin:0 0 12px;
+  }
+  .modal-text{margin:0 0 6px;font-size:14px;color:var(--muted);line-height:1.45;}
+  .modal-name{color:var(--paper);word-break:break-word;}
+  .modal .action-row{margin-top:20px;}
+  .modal .tag-input-row input{font-size:16px;}
 </style>
 </head>
 <body>
@@ -401,9 +484,51 @@
     <h2>Saved Ideas</h2>
     <span class="rack-count" id="rackCount">0</span>
   </div>
+  <div class="finder" id="finder" hidden>
+    <input type="search" id="searchInput" placeholder="Search titles and tags" autocomplete="off">
+    <div class="filter-chips" id="filterChips"></div>
+  </div>
   <div id="ideaRack"></div>
 
   <div class="note">Ideas are saved in this browser on this device. Use the same link each time to see them.</div>
+</div>
+
+<!-- Delete confirmation -->
+<div class="modal-backdrop" id="deleteModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Delete idea">
+    <h3>Delete this idea?</h3>
+    <p class="modal-text modal-name" id="deleteName"></p>
+    <p class="modal-text">The recording and its tags will be removed. This can't be undone.</p>
+    <div class="action-row">
+      <button class="btn btn-discard" id="deleteCancel" type="button">Cancel</button>
+      <button class="btn btn-danger" id="deleteConfirm" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit title and tags -->
+<div class="modal-backdrop" id="editModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Edit idea">
+    <h3>Edit idea</h3>
+    <div class="field">
+      <label>Title</label>
+      <div class="label-tape">
+        <input type="text" id="editTitle" placeholder="Untitled idea" maxlength="60">
+      </div>
+    </div>
+    <div class="field">
+      <label>Tags</label>
+      <div class="tag-input-row">
+        <input type="text" id="editTagInput" placeholder="Add a tag" maxlength="20">
+        <button id="editAddTagBtn" type="button">Add</button>
+      </div>
+      <div class="chips" id="editChipRow"></div>
+    </div>
+    <div class="action-row">
+      <button class="btn btn-discard" id="editCancel" type="button">Cancel</button>
+      <button class="btn btn-save" id="editSave" type="button">Save changes</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -468,6 +593,36 @@ async function dbGetAll(){
     const req = db.transaction(STORE, 'readonly').objectStore(STORE).getAll();
     req.onsuccess = ()=> resolve(req.result);
     req.onerror = ()=> reject(req.error);
+  });
+}
+
+async function dbDelete(id){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete = ()=> resolve();
+    tx.onerror = ()=> reject(tx.error);
+  });
+}
+
+// Change only the title and tags of a saved idea. We read the existing
+// record, change two fields, and write it back, so the audio is untouched.
+async function dbUpdateMeta(id, title, newTags){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    const getReq = store.get(id);
+    getReq.onsuccess = ()=>{
+      const rec = getReq.result;
+      if(!rec){ reject(new Error('Idea not found')); return; }
+      rec.title = title;
+      rec.tags = newTags;
+      store.put(rec);
+    };
+    tx.oncomplete = ()=> resolve();
+    tx.onerror = ()=> reject(tx.error);
   });
 }
 
@@ -539,6 +694,9 @@ function formatTime(sec){
 }
 
 async function startRecording(){
+  // Never record while something is playing back (the mic would hear it).
+  player.pause();
+  playbackAudio.pause();
   try{
     stream = await navigator.mediaDevices.getUserMedia({audio:true});
   }catch(err){
@@ -610,43 +768,48 @@ recBtn.addEventListener('click', ()=>{
   }
 });
 
-function renderChips(){
-  chipRow.innerHTML = '';
-  tags.forEach((tag, i)=>{
-    const chip = document.createElement('div');
-    chip.className = 'chip';
-    chip.innerHTML = `<span>${tag}</span>`;
-    const removeBtn = document.createElement('button');
-    removeBtn.textContent = '×';
-    removeBtn.addEventListener('click', ()=>{
-      tags.splice(i,1);
-      renderChips();
+/* ---------- Tag editor ----------
+   One function builds the whole tag UI from three ingredients: the list
+   of tags, the text box, and the row where chips are drawn. The capture
+   form and the edit dialog both use it. It changes the list in place
+   (push / splice), so the list you pass in is always the live one. */
+function setupTagEditor(list, input, addBtn, chipContainer){
+  function render(){
+    chipContainer.innerHTML = '';
+    list.forEach((tag, i)=>{
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      const label = document.createElement('span');
+      label.textContent = tag;
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', ()=>{ list.splice(i, 1); render(); });
+      chip.appendChild(label);
+      chip.appendChild(removeBtn);
+      chipContainer.appendChild(chip);
     });
-    chip.appendChild(removeBtn);
-    chipRow.appendChild(chip);
-  });
-}
-
-function addTag(){
-  const val = tagInput.value.trim();
-  if(val && !tags.includes(val)){
-    tags.push(val);
-    renderChips();
   }
-  tagInput.value = '';
-  tagInput.focus();
+  function add(){
+    const val = input.value.trim();
+    if(val && !list.includes(val)){ list.push(val); render(); }
+    input.value = '';
+    input.focus();
+  }
+  addBtn.addEventListener('click', add);
+  input.addEventListener('keydown', e=>{
+    if(e.key === 'Enter'){ e.preventDefault(); add(); }
+  });
+  return render;
 }
 
-addTagBtn.addEventListener('click', addTag);
-tagInput.addEventListener('keydown', e=>{
-  if(e.key === 'Enter'){ e.preventDefault(); addTag(); }
-});
+const renderChips = setupTagEditor(tags, tagInput, addTagBtn, chipRow);
 
 function resetForm(){
   captureForm.classList.remove('show');
   titleInput.value = '';
   tagInput.value = '';
-  tags = [];
+  tags.length = 0; // empty the list in place (the tag editor holds a reference to it)
   renderChips();
   currentBlob = null;
   currentUrl = null;
@@ -657,10 +820,14 @@ discardBtn.addEventListener('click', resetForm);
 
 saveBtn.addEventListener('click', async ()=>{
   if(!currentBlob){ return; }
+  // If a tag was typed but "Add" wasn't tapped, keep it instead of dropping it.
+  const finalTags = [...tags];
+  const pendingTag = tagInput.value.trim();
+  if(pendingTag && !finalTags.includes(pendingTag)){ finalTags.push(pendingTag); }
   const record = {
     id: Date.now(),
     title: titleInput.value.trim() || 'Untitled idea',
-    tags: [...tags],
+    tags: finalTags,
     // We store the raw bytes (an ArrayBuffer) plus the format label.
     // Raw bytes are the most reliable thing to keep in iOS Safari.
     audio: await currentBlob.arrayBuffer(),
@@ -678,34 +845,135 @@ saveBtn.addEventListener('click', async ()=>{
   resetForm();
 });
 
+/* ---------- Playback ----------
+   One shared Audio object plays every idea. Because there is only one
+   player, two ideas can never play at once: loading a new idea into it
+   replaces whatever was playing. A single player is also the natural
+   place to attach a playback meter and a scrub bar later. */
+const player = new Audio();
+let playingId = null;
+
+// Buttons never decide their own icon. After any change we look at the
+// player's real state and redraw every button to match it.
+function refreshPlayButtons(){
+  document.querySelectorAll('.idea-play').forEach(btn=>{
+    const active = Number(btn.dataset.id) === playingId && !player.paused;
+    btn.textContent = active ? '❚❚' : '▶';
+    btn.classList.toggle('playing', active);
+    btn.setAttribute('aria-label', active ? 'Pause' : 'Play');
+  });
+}
+
+player.addEventListener('play', refreshPlayButtons);
+player.addEventListener('pause', refreshPlayButtons);
+player.addEventListener('ended', ()=>{
+  player.currentTime = 0;
+  refreshPlayButtons();
+});
+
+// Pressing play on the preview of a brand-new recording stops saved ideas too.
+playbackAudio.addEventListener('play', ()=> player.pause());
+
+function togglePlay(idea){
+  if(playingId === idea.id){
+    if(player.paused){ player.play().catch(()=>{}); } else { player.pause(); }
+    return;
+  }
+  playbackAudio.pause();
+  player.src = idea.url;
+  playingId = idea.id;
+  player.play().catch(()=>{});
+  refreshPlayButtons();
+}
+
+/* ---------- Search and filter ----------
+   The saved list never changes when you search. We keep the full list
+   (ideas) and build a filtered view of it each time we draw. */
+const finder = document.getElementById('finder');
+const searchInput = document.getElementById('searchInput');
+const filterChips = document.getElementById('filterChips');
+let searchText = '';
+const activeTags = [];
+
+function visibleIdeas(){
+  const q = searchText.trim().toLowerCase();
+  return ideas.filter(idea=>{
+    const textOk = !q ||
+      idea.title.toLowerCase().includes(q) ||
+      idea.tags.some(t => t.toLowerCase().includes(q));
+    // With several tags selected, an idea must have all of them.
+    const tagsOk = activeTags.every(t => idea.tags.includes(t));
+    return textOk && tagsOk;
+  });
+}
+
+function renderFilters(){
+  finder.hidden = ideas.length === 0;
+  const allTags = [...new Set(ideas.flatMap(i => i.tags))].sort((a,b)=> a.localeCompare(b));
+  // Forget selected tags that no longer exist on any idea (after edits or deletes).
+  for(let i = activeTags.length - 1; i >= 0; i--){
+    if(!allTags.includes(activeTags[i])){ activeTags.splice(i, 1); }
+  }
+  filterChips.innerHTML = '';
+  allTags.forEach(tag=>{
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'filter-chip' + (activeTags.includes(tag) ? ' on' : '');
+    b.textContent = '#' + tag;
+    b.addEventListener('click', ()=>{
+      const i = activeTags.indexOf(tag);
+      if(i >= 0){ activeTags.splice(i, 1); } else { activeTags.push(tag); }
+      renderRack();
+    });
+    filterChips.appendChild(b);
+  });
+}
+
+searchInput.addEventListener('input', ()=>{
+  searchText = searchInput.value;
+  renderRack();
+});
+
+/* ---------- The list ---------- */
+const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+
+function makeIconBtn(svg, label, onClick, extraClass){
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'icon-btn' + (extraClass ? ' ' + extraClass : '');
+  b.setAttribute('aria-label', label);
+  b.innerHTML = svg;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
 function renderRack(){
-  rackCount.textContent = ideas.length;
+  renderFilters();
+  const shown = visibleIdeas();
+  rackCount.textContent = shown.length === ideas.length
+    ? String(ideas.length)
+    : shown.length + ' of ' + ideas.length;
+
   if(ideas.length === 0){
     ideaRack.innerHTML = '<div class="empty-rack">No ideas captured yet — hit record to catch the next one.</div>';
     return;
   }
+  if(shown.length === 0){
+    ideaRack.innerHTML = '<div class="empty-rack">No ideas match your search.</div>';
+    return;
+  }
+
   ideaRack.innerHTML = '';
-  ideas.forEach(idea=>{
+  shown.forEach(idea=>{
     const card = document.createElement('div');
     card.className = 'idea-card';
 
-    const playBtn = document.createElement('div');
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
     playBtn.className = 'idea-play';
-    playBtn.textContent = '▶';
-    const audioEl = new Audio(idea.url);
-    playBtn.addEventListener('click', ()=>{
-      if(audioEl.paused){
-        audioEl.play();
-        playBtn.textContent = '❚❚';
-      } else {
-        audioEl.pause();
-        playBtn.textContent = '▶';
-      }
-    });
-    audioEl.addEventListener('ended', ()=>{
-      audioEl.currentTime = 0;
-      playBtn.textContent = '▶';
-    });
+    playBtn.dataset.id = idea.id;
+    playBtn.addEventListener('click', ()=> togglePlay(idea));
 
     const meta = document.createElement('div');
     meta.className = 'idea-meta';
@@ -722,17 +990,115 @@ function renderRack(){
     idea.tags.forEach(t=>{
       const tagSpan = document.createElement('span');
       tagSpan.className = 'mini-chip';
-      tagSpan.textContent = '#'+t;
+      tagSpan.textContent = '#' + t;
       sub.appendChild(tagSpan);
     });
     meta.appendChild(title);
     meta.appendChild(sub);
 
+    const actions = document.createElement('div');
+    actions.className = 'idea-actions';
+    actions.appendChild(makeIconBtn(ICON_EDIT, 'Edit idea', ()=> openEdit(idea)));
+    actions.appendChild(makeIconBtn(ICON_TRASH, 'Delete idea', ()=> askDelete(idea), 'danger'));
+
     card.appendChild(playBtn);
     card.appendChild(meta);
+    card.appendChild(actions);
     ideaRack.appendChild(card);
   });
+  refreshPlayButtons();
 }
+
+/* ---------- Delete (with confirmation) ----------
+   Tapping the trash icon only *asks*. Nothing is removed until the
+   person confirms in the dialog. */
+const deleteModal = document.getElementById('deleteModal');
+const deleteName = document.getElementById('deleteName');
+const deleteCancel = document.getElementById('deleteCancel');
+const deleteConfirm = document.getElementById('deleteConfirm');
+let pendingDelete = null;
+
+function askDelete(idea){
+  pendingDelete = idea;
+  deleteName.textContent = '“' + idea.title + '”';
+  deleteModal.hidden = false;
+}
+function closeDelete(){
+  deleteModal.hidden = true;
+  pendingDelete = null;
+}
+deleteCancel.addEventListener('click', closeDelete);
+deleteModal.addEventListener('click', e=>{ if(e.target === deleteModal){ closeDelete(); } });
+deleteConfirm.addEventListener('click', async ()=>{
+  if(!pendingDelete){ return; }
+  const idea = pendingDelete;
+  try{
+    await dbDelete(idea.id);
+  }catch(err){
+    closeDelete();
+    alert('Could not delete this idea. Storage is unavailable.');
+    return;
+  }
+  if(playingId === idea.id){
+    player.pause();
+    player.removeAttribute('src');
+    player.load();
+    playingId = null;
+  }
+  URL.revokeObjectURL(idea.url); // free the memory held by the playable copy
+  ideas = ideas.filter(i => i.id !== idea.id);
+  closeDelete();
+  renderRack();
+});
+
+/* ---------- Edit title and tags ---------- */
+const editModal = document.getElementById('editModal');
+const editTitle = document.getElementById('editTitle');
+const editTagInput = document.getElementById('editTagInput');
+const editAddTagBtn = document.getElementById('editAddTagBtn');
+const editChipRow = document.getElementById('editChipRow');
+const editCancel = document.getElementById('editCancel');
+const editSave = document.getElementById('editSave');
+const editTags = [];
+const renderEditChips = setupTagEditor(editTags, editTagInput, editAddTagBtn, editChipRow);
+let editing = null;
+
+function openEdit(idea){
+  editing = idea;
+  editTitle.value = idea.title;
+  editTags.length = 0;
+  editTags.push(...idea.tags);
+  editTagInput.value = '';
+  renderEditChips();
+  editModal.hidden = false;
+}
+function closeEdit(){
+  editModal.hidden = true;
+  editing = null;
+}
+editCancel.addEventListener('click', closeEdit);
+editModal.addEventListener('click', e=>{ if(e.target === editModal){ closeEdit(); } });
+editSave.addEventListener('click', async ()=>{
+  if(!editing){ return; }
+  const newTitle = editTitle.value.trim() || 'Untitled idea';
+  const newTags = [...editTags];
+  const pending = editTagInput.value.trim();
+  if(pending && !newTags.includes(pending)){ newTags.push(pending); }
+  try{
+    await dbUpdateMeta(editing.id, newTitle, newTags);
+  }catch(err){
+    alert('Could not save changes. Storage is unavailable.');
+    return;
+  }
+  editing.title = newTitle;
+  editing.tags = newTags;
+  closeEdit();
+  renderRack();
+});
+
+document.addEventListener('keydown', e=>{
+  if(e.key === 'Escape'){ closeDelete(); closeEdit(); }
+});
 
 // Ask the browser not to evict our data when the device is low on space.
 // It may say no; that's fine, the app works either way.
