@@ -493,7 +493,9 @@ async function startRecording(){
   source.connect(analyser);
 
   audioChunks = [];
-  mediaRecorder = new MediaRecorder(stream);
+  const preferredTypes = ['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg'];
+  const supportedType = preferredTypes.find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
+  mediaRecorder = supportedType ? new MediaRecorder(stream, {mimeType: supportedType}) : new MediaRecorder(stream);
   mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
   mediaRecorder.onstop = onRecordingStop;
   mediaRecorder.start();
@@ -530,7 +532,8 @@ function stopRecording(){
 }
 
 function onRecordingStop(){
-  currentBlob = new Blob(audioChunks, {type:'audio/webm'});
+  const actualType = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+  currentBlob = new Blob(audioChunks, {type: actualType});
   currentUrl = URL.createObjectURL(currentBlob);
   playbackAudio.src = currentUrl;
   captureForm.classList.add('show');
@@ -622,10 +625,17 @@ function renderRack(){
     playBtn.textContent = '▶';
     const audioEl = new Audio(idea.url);
     playBtn.addEventListener('click', ()=>{
+      if(audioEl.paused){
+        audioEl.play();
+        playBtn.textContent = '❚❚';
+      } else {
+        audioEl.pause();
+        playBtn.textContent = '▶';
+      }
+    });
+    audioEl.addEventListener('ended', ()=>{
       audioEl.currentTime = 0;
-      audioEl.play();
-      playBtn.textContent = '❚❚';
-      audioEl.onended = ()=> playBtn.textContent = '▶';
+      playBtn.textContent = '▶';
     });
 
     const meta = document.createElement('div');
