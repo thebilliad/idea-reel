@@ -403,7 +403,7 @@
   </div>
   <div id="ideaRack"></div>
 
-  <div class="note">Recordings live in this session only — reload clears them. Saving to your device is the next step we'll build.</div>
+  <div class="note">Ideas are saved in this browser on this device. Use the same link each time to see them.</div>
 </div>
 
 <script>
@@ -433,6 +433,66 @@ let recording = false, startTime = 0, timerInterval;
 let currentBlob = null, currentUrl = null;
 let tags = [];
 let ideas = [];
+
+/* ---------- Storage (IndexedDB) ----------
+   IndexedDB is a small database built into the browser. Data in it
+   survives page reloads and closing the browser. We keep one "object
+   store" called "ideas", where each record is looked up by its id. */
+const DB_NAME = 'idea-reel';
+const STORE = 'ideas';
+
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, 1);
+    // Runs only the first time (or when the version number goes up):
+    // this is where we define the shape of the database.
+    req.onupgradeneeded = ()=> req.result.createObjectStore(STORE, {keyPath:'id'});
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+
+async function dbPut(record){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(record);
+    tx.oncomplete = ()=> resolve();
+    tx.onerror = ()=> reject(tx.error);
+  });
+}
+
+async function dbGetAll(){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const req = db.transaction(STORE, 'readonly').objectStore(STORE).getAll();
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+
+// Turn a stored record back into an idea the app can display and play.
+function recordToIdea(rec){
+  const blob = new Blob([rec.audio], {type: rec.mimeType});
+  return {
+    id: rec.id,
+    title: rec.title,
+    tags: rec.tags,
+    url: URL.createObjectURL(blob),
+    time: new Date(rec.time)
+  };
+}
+
+async function loadIdeas(){
+  try{
+    const records = await dbGetAll();
+    records.sort((a,b)=> b.time - a.time); // newest first
+    ideas = records.map(recordToIdea);
+  }catch(err){
+    statusText.textContent = 'Could not load saved ideas';
+  }
+  renderRack();
+}
 
 function resizeCanvas(){
   meterCanvas.width = meterCanvas.clientWidth * devicePixelRatio;
@@ -595,16 +655,25 @@ function resetForm(){
 
 discardBtn.addEventListener('click', resetForm);
 
-saveBtn.addEventListener('click', ()=>{
+saveBtn.addEventListener('click', async ()=>{
   if(!currentBlob){ return; }
-  const idea = {
+  const record = {
     id: Date.now(),
     title: titleInput.value.trim() || 'Untitled idea',
     tags: [...tags],
-    url: currentUrl,
-    time: new Date()
+    // We store the raw bytes (an ArrayBuffer) plus the format label.
+    // Raw bytes are the most reliable thing to keep in iOS Safari.
+    audio: await currentBlob.arrayBuffer(),
+    mimeType: currentBlob.type,
+    time: Date.now()
   };
-  ideas.unshift(idea);
+  try{
+    await dbPut(record);
+  }catch(err){
+    statusText.textContent = 'Save failed — storage unavailable';
+    return; // keep the form open so nothing is lost
+  }
+  ideas.unshift(recordToIdea(record));
   renderRack();
   resetForm();
 });
@@ -647,7 +716,8 @@ function renderRack(){
     sub.className = 'idea-sub';
     const timeSpan = document.createElement('span');
     timeSpan.className = 'idea-time';
-    timeSpan.textContent = idea.time.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+    timeSpan.textContent = idea.time.toLocaleDateString(undefined,{month:'short',day:'numeric'}) + ' · ' +
+      idea.time.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
     sub.appendChild(timeSpan);
     idea.tags.forEach(t=>{
       const tagSpan = document.createElement('span');
@@ -664,7 +734,11 @@ function renderRack(){
   });
 }
 
-renderRack();
+// Ask the browser not to evict our data when the device is low on space.
+// It may say no; that's fine, the app works either way.
+try{ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist(); } }catch(e){}
+
+loadIdeas();
 </script>
 </body>
 </html>
