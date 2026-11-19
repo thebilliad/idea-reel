@@ -970,40 +970,6 @@ function knownDuration(){
   return isFinite(player.duration) ? player.duration : 0;
 }
 
-/* The player's own clock (player.currentTime) can freeze for a moment
-   right after playback starts or after a seek, even though sound is
-   already coming out. Safari does this with recorded audio. So the bar
-   keeps its own clock: it counts forward by itself from the last real
-   reading, never runs more than 1 second ahead of the real position, and
-   is corrected whenever the player reports a new position. */
-let clockMedia = 0;    // last real position we saw (seconds)
-let clockWall = 0;     // wall-clock time (ms) when we saw it
-let lastReal = -1;
-let lastShown = 0;
-let stalled = false;   // true while the player is genuinely buffering
-
-function resetClock(){
-  const t = player.currentTime;
-  clockMedia = t;
-  clockWall = performance.now();
-  lastReal = t;
-  lastShown = t;
-}
-
-function displayTime(){
-  const real = player.currentTime;
-  if(player.paused || stalled){ lastShown = real; return real; }
-  const now = performance.now();
-  if(real !== lastReal){ lastReal = real; clockMedia = real; clockWall = now; }
-  let est = clockMedia + ((now - clockWall) / 1000) * player.playbackRate;
-  est = Math.min(est, real + 1.0);                 // never far ahead of the truth
-  const dur = knownDuration();
-  if(dur){ est = Math.min(est, dur); }
-  if(est < lastShown && lastShown - est < 0.5){ est = lastShown; } // no backward wobble
-  lastShown = est;
-  return est;
-}
-
 function updateScrub(){
   const card = document.querySelector('.idea-card.active');
   if(!card){ return; }
@@ -1012,7 +978,7 @@ function updateScrub(){
   const dur = knownDuration();
   range.disabled = !dur;
   range.max = dur || 0;
-  if(!scrubbing){ range.value = displayTime(); }
+  if(!scrubbing){ range.value = player.currentTime; }
   label.textContent = fmtTime(Number(range.value)) + ' / ' + (dur ? fmtTime(dur) : '--:--');
 }
 
@@ -1081,11 +1047,6 @@ player.addEventListener('play', ()=>{
 player.addEventListener('pause', refreshPlayButtons);
 player.addEventListener('timeupdate', updateScrub);
 player.addEventListener('durationchange', updateScrub);
-// Restart the bar's own clock whenever the position jumps or playback starts.
-player.addEventListener('play', resetClock);
-player.addEventListener('seeked', resetClock);
-player.addEventListener('waiting', ()=>{ stalled = true; });
-player.addEventListener('playing', ()=>{ stalled = false; resetClock(); });
 player.addEventListener('ended', ()=>{
   delete positions[playingId]; // finished ideas start over next time
   player.currentTime = 0;
