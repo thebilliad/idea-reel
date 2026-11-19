@@ -425,6 +425,31 @@
   .modal-name{color:var(--paper);word-break:break-word;}
   .modal .action-row{margin-top:20px;}
   .modal .tag-input-row input{font-size:16px;}
+
+  /* ---- Backup ---- */
+  .backup{
+    margin-top:30px;
+    padding-top:18px;
+    border-top:1px dashed var(--panel-line);
+  }
+  .backup h2{
+    font-family:'Oswald',sans-serif;
+    font-size:13px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin:0 0 8px;
+  }
+  .backup-text{margin:0 0 14px;font-size:12px;line-height:1.5;color:var(--muted);}
+  .backup-row{display:flex;gap:10px;}
+  .backup-status{
+    margin-top:12px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--amber-dim);
+    min-height:14px;
+    line-height:1.5;
+  }
 </style>
 </head>
 <body>
@@ -490,7 +515,17 @@
   </div>
   <div id="ideaRack"></div>
 
-  <div class="note">Ideas are saved in this browser on this device. Use the same link each time to see them.</div>
+  <div class="backup" id="backupPanel">
+    <h2>Backup</h2>
+    <p class="backup-text">Ideas live in this browser only. Safari can clear them, so save a backup file now and then. The arrow on each idea exports just that recording as an audio file.</p>
+    <div class="backup-row">
+      <button class="btn btn-save" id="backupBtn" type="button">Back up all ideas</button>
+      <button class="btn btn-discard" id="restoreBtn" type="button">Restore</button>
+    </div>
+    <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+    <div class="backup-status" id="backupStatus" role="status"></div>
+    <div class="backup-status" id="storageStatus"></div>
+  </div>
 </div>
 
 <!-- Delete confirmation -->
@@ -634,6 +669,8 @@ function recordToIdea(rec){
     title: rec.title,
     tags: rec.tags,
     url: URL.createObjectURL(blob),
+    blob: blob,               // kept so we can export the audio as a file
+    mimeType: rec.mimeType,
     time: new Date(rec.time)
   };
 }
@@ -936,7 +973,8 @@ searchInput.addEventListener('input', ()=>{
 
 /* ---------- The list ---------- */
 const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+const ICON_EXPORT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>';
+const ICON_TRASH ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
 
 function makeIconBtn(svg, label, onClick, extraClass){
   const b = document.createElement('button');
@@ -998,6 +1036,7 @@ function renderRack(){
 
     const actions = document.createElement('div');
     actions.className = 'idea-actions';
+    actions.appendChild(makeIconBtn(ICON_EXPORT, 'Export audio file', ()=> exportIdea(idea)));
     actions.appendChild(makeIconBtn(ICON_EDIT, 'Edit idea', ()=> openEdit(idea)));
     actions.appendChild(makeIconBtn(ICON_TRASH, 'Delete idea', ()=> askDelete(idea), 'danger'));
 
@@ -1100,11 +1139,165 @@ document.addEventListener('keydown', e=>{
   if(e.key === 'Escape'){ closeDelete(); closeEdit(); }
 });
 
-// Ask the browser not to evict our data when the device is low on space.
-// It may say no; that's fine, the app works either way.
-try{ if(navigator.storage && navigator.storage.persist){ navigator.storage.persist(); } }catch(e){}
+/* ---------- Export and backup ----------
+   Two kinds of file leave the app:
+   1. One idea  -> a plain audio file you can drop into your DAW.
+   2. Everything -> one .json backup file (audio is stored inside it as
+      text, called base64) that the Restore button can read back in. */
+const backupBtn = document.getElementById('backupBtn');
+const restoreBtn = document.getElementById('restoreBtn');
+const restoreFile = document.getElementById('restoreFile');
+const backupStatus = document.getElementById('backupStatus');
+const storageStatus = document.getElementById('storageStatus');
+
+function say(msg){ backupStatus.textContent = msg; }
+
+function extensionFor(mime){
+  const m = (mime || '').toLowerCase();
+  if(m.includes('mp4') || m.includes('aac')) return 'm4a';
+  if(m.includes('webm')) return 'webm';
+  if(m.includes('ogg')) return 'ogg';
+  if(m.includes('wav')) return 'wav';
+  return 'audio';
+}
+
+// Keep the file name safe on every operating system.
+function safeName(text){
+  return (text || 'idea').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'idea';
+}
+
+function dateStamp(d){
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate());
+}
+
+// Hand a file to the person. On iPhone the share sheet is best (Save to
+// Files, AirDrop, send to another app). If the browser can't share files,
+// fall back to a normal download.
+async function deliverFile(file){
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({files:[file]});
+      return 'shared';
+    }catch(err){
+      if(err && err.name === 'AbortError'){ return 'cancelled'; } // closed the sheet
+      // any other failure: fall through to download
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=> URL.revokeObjectURL(url), 60000);
+  return 'downloaded';
+}
+
+async function exportIdea(idea){
+  const name = safeName(idea.title) + ' ' + dateStamp(idea.time) + '.' + extensionFor(idea.mimeType);
+  const file = new File([idea.blob], name, {type: idea.mimeType});
+  const result = await deliverFile(file);
+  if(result !== 'cancelled'){ say('Exported ' + name); }
+}
+
+// Read a Blob and return its bytes as base64 text.
+function blobToBase64(blob){
+  return new Promise((resolve, reject)=>{
+    const r = new FileReader();
+    r.onload = ()=> resolve(String(r.result).split(',')[1] || '');
+    r.onerror = ()=> reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+function base64ToBytes(b64){
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++){ bytes[i] = bin.charCodeAt(i); }
+  return bytes;
+}
+
+backupBtn.addEventListener('click', async ()=>{
+  if(ideas.length === 0){ say('Nothing to back up yet.'); return; }
+  backupBtn.disabled = true;
+  say('Preparing backup…');
+  try{
+    const items = [];
+    for(const idea of ideas){
+      items.push({
+        id: idea.id,
+        title: idea.title,
+        tags: idea.tags,
+        time: idea.time.getTime(),
+        mimeType: idea.mimeType,
+        audio: await blobToBase64(idea.blob)
+      });
+    }
+    const payload = JSON.stringify({app:'idea-reel', version:1, exported:Date.now(), ideas:items});
+    const name = 'idea-reel-backup ' + dateStamp(new Date()) + '.json';
+    const file = new File([payload], name, {type:'application/json'});
+    const result = await deliverFile(file);
+    if(result !== 'cancelled'){ say('Backed up ' + items.length + (items.length === 1 ? ' idea' : ' ideas') + ' to ' + name); }
+    else { say(''); }
+  }catch(err){
+    say('Backup failed. Try again, or export ideas one at a time.');
+  }
+  backupBtn.disabled = false;
+});
+
+restoreBtn.addEventListener('click', ()=> restoreFile.click());
+
+restoreFile.addEventListener('change', async ()=>{
+  const file = restoreFile.files[0];
+  restoreFile.value = ''; // lets you pick the same file again later
+  if(!file){ return; }
+  say('Reading backup…');
+  try{
+    const data = JSON.parse(await file.text());
+    if(data.app !== 'idea-reel' || !Array.isArray(data.ideas)){
+      say('That file is not an Idea Reel backup.');
+      return;
+    }
+    const have = new Set(ideas.map(i => i.id));
+    let added = 0, skipped = 0;
+    for(const item of data.ideas){
+      if(have.has(item.id)){ skipped++; continue; } // never overwrite what's here
+      const bytes = base64ToBytes(item.audio);
+      await dbPut({
+        id: item.id,
+        title: item.title || 'Untitled idea',
+        tags: Array.isArray(item.tags) ? item.tags : [],
+        audio: bytes.buffer,
+        mimeType: item.mimeType,
+        time: item.time
+      });
+      added++;
+    }
+    await loadIdeas();
+    say('Restored ' + added + (added === 1 ? ' idea' : ' ideas') +
+        (skipped ? ' (' + skipped + ' already here, skipped).' : '.'));
+  }catch(err){
+    say('Could not read that file. Is it an Idea Reel backup?');
+  }
+});
+
+// Ask the browser not to evict our data when the device is low on space,
+// then show the answer. Safari may say no; the app works either way.
+async function checkStorage(){
+  try{
+    if(!(navigator.storage && navigator.storage.persist)){ return; }
+    let persisted = await navigator.storage.persisted();
+    if(!persisted){ persisted = await navigator.storage.persist(); }
+    storageStatus.textContent = persisted
+      ? 'Storage: protected from automatic clearing.'
+      : 'Storage: not protected. Safari may clear it, so keep a backup.';
+  }catch(e){}
+}
 
 loadIdeas();
+checkStorage();
 </script>
 </body>
 </html>
