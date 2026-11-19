@@ -450,6 +450,49 @@
     min-height:14px;
     line-height:1.5;
   }
+
+  /* ---- Scrub bar (shown only on the idea loaded in the player) ---- */
+  .idea-card{flex-wrap:wrap;}
+  .idea-card.active{border-left-color:var(--amber);}
+  .scrub{display:none;flex-basis:100%;align-items:center;gap:12px;margin-top:2px;}
+  .idea-card.active .scrub{display:flex;}
+  .scrub-time{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    color:var(--muted);
+    white-space:nowrap;
+    min-width:78px;
+    text-align:right;
+  }
+  .scrub-range{
+    flex:1;
+    min-width:0;
+    height:28px;
+    margin:0;
+    background:transparent;
+    -webkit-appearance:none;appearance:none;
+    touch-action:pan-y;
+  }
+  .scrub-range::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--panel-line);}
+  .scrub-range::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;
+    width:18px;height:18px;border-radius:50%;
+    background:var(--amber);
+    border:2px solid var(--bg);
+    margin-top:-7px;
+  }
+  .scrub-range::-moz-range-track{height:4px;border-radius:2px;background:var(--panel-line);}
+  .scrub-range::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--amber);border:2px solid var(--bg);}
+  .scrub-range:disabled{opacity:0.4;}
+
+  /* ---- Setting ---- */
+  .setting{
+    display:flex;align-items:center;gap:8px;
+    margin:-4px 2px 12px;
+    font-size:12px;color:var(--muted);
+    cursor:pointer;
+  }
+  .setting input{accent-color:var(--amber);width:16px;height:16px;margin:0;}
 </style>
 </head>
 <body>
@@ -509,6 +552,10 @@
     <h2>Saved Ideas</h2>
     <span class="rack-count" id="rackCount">0</span>
   </div>
+  <label class="setting">
+    <input type="checkbox" id="resumeToggle">
+    <span>Resume ideas where I left off</span>
+  </label>
   <div class="finder" id="finder" hidden>
     <input type="search" id="searchInput" placeholder="Search titles and tags" autocomplete="off">
     <div class="filter-chips" id="filterChips"></div>
@@ -899,13 +946,128 @@ function refreshPlayButtons(){
     btn.classList.toggle('playing', active);
     btn.setAttribute('aria-label', active ? 'Pause' : 'Play');
   });
+  // The card for the loaded idea (playing or paused) shows its scrub bar.
+  document.querySelectorAll('.idea-card').forEach(card=>{
+    card.classList.toggle('active', Number(card.dataset.id) === playingId);
+  });
+  updateScrub();
 }
 
-player.addEventListener('play', refreshPlayButtons);
+/* ---------- Scrub bar ----------
+   The bar is a plain <input type="range">. Dragging it sets the player's
+   currentTime; while playing, we move the bar to match the player. */
+let scrubbing = false;   // true while a finger is dragging the bar
+let rafId = 0;           // handle for the animation loop below
+
+function fmtTime(sec){
+  if(!isFinite(sec) || sec < 0){ sec = 0; }
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60).toString().padStart(2, '0');
+  return m + ':' + s;
+}
+
+function knownDuration(){
+  return isFinite(player.duration) ? player.duration : 0;
+}
+
+function updateScrub(){
+  const card = document.querySelector('.idea-card.active');
+  if(!card){ return; }
+  const range = card.querySelector('.scrub-range');
+  const label = card.querySelector('.scrub-time');
+  const dur = knownDuration();
+  range.disabled = !dur;
+  range.max = dur || 0;
+  if(!scrubbing){ range.value = player.currentTime; }
+  label.textContent = fmtTime(Number(range.value)) + ' / ' + (dur ? fmtTime(dur) : '--:--');
+}
+
+// While playing, redraw the bar every screen refresh so it moves smoothly.
+function tick(){
+  updateScrub();
+  rafId = player.paused ? 0 : requestAnimationFrame(tick);
+}
+
+function makeScrub(){
+  const wrap = document.createElement('div');
+  wrap.className = 'scrub';
+  const range = document.createElement('input');
+  range.type = 'range';
+  range.className = 'scrub-range';
+  range.min = 0;
+  range.max = 0;
+  range.step = 'any';
+  range.value = 0;
+  range.disabled = true;
+  range.setAttribute('aria-label', 'Seek');
+  range.addEventListener('input', ()=>{
+    scrubbing = true;
+    player.currentTime = Number(range.value);
+    updateScrub();
+  });
+  const end = ()=>{ scrubbing = false; updateScrub(); };
+  range.addEventListener('change', end);
+  range.addEventListener('pointerup', end);
+  range.addEventListener('touchend', end);
+  const label = document.createElement('span');
+  label.className = 'scrub-time';
+  label.textContent = '0:00 / --:--';
+  wrap.appendChild(range);
+  wrap.appendChild(label);
+  return wrap;
+}
+
+/* ---------- Resume where I left off (optional, off by default) ----------
+   When on, switching away from an idea remembers how far you were, and
+   coming back continues from there. The on/off choice is saved with
+   localStorage, a tiny key-value store that is fine for a setting. */
+const resumeToggle = document.getElementById('resumeToggle');
+const positions = {};   // idea id -> seconds
+let resumeOn = false;
+let pendingResume = 0;
+try{ resumeOn = localStorage.getItem('idea-reel-resume') === '1'; }catch(e){}
+resumeToggle.checked = resumeOn;
+resumeToggle.addEventListener('change', ()=>{
+  resumeOn = resumeToggle.checked;
+  try{ localStorage.setItem('idea-reel-resume', resumeOn ? '1' : '0'); }catch(e){}
+  if(!resumeOn){ Object.keys(positions).forEach(k => delete positions[k]); }
+});
+
+function applyResume(){
+  if(pendingResume > 0 && isFinite(player.duration)){
+    player.currentTime = Math.min(pendingResume, Math.max(0, player.duration - 0.25));
+  }
+  pendingResume = 0;
+}
+
+player.addEventListener('play', ()=>{
+  refreshPlayButtons();
+  if(!rafId){ rafId = requestAnimationFrame(tick); }
+});
 player.addEventListener('pause', refreshPlayButtons);
+player.addEventListener('timeupdate', updateScrub);
+player.addEventListener('durationchange', updateScrub);
 player.addEventListener('ended', ()=>{
+  delete positions[playingId]; // finished ideas start over next time
   player.currentTime = 0;
   refreshPlayButtons();
+});
+player.addEventListener('loadedmetadata', ()=>{
+  // Some recordings (typically webm from Chrome/Firefox) report an unknown
+  // length. Seeking far past the end makes the browser work it out.
+  if(player.duration === Infinity){
+    const fix = ()=>{
+      player.removeEventListener('timeupdate', fix);
+      player.currentTime = 0;
+      applyResume();
+      updateScrub();
+    };
+    player.addEventListener('timeupdate', fix);
+    player.currentTime = 1e101;
+  }else{
+    applyResume();
+    updateScrub();
+  }
 });
 
 // Pressing play on the preview of a brand-new recording stops saved ideas too.
@@ -917,6 +1079,10 @@ function togglePlay(idea){
     return;
   }
   playbackAudio.pause();
+  if(resumeOn && playingId !== null && player.currentTime > 0){
+    positions[playingId] = player.currentTime;   // remember where we were
+  }
+  pendingResume = resumeOn ? (positions[idea.id] || 0) : 0;
   player.src = idea.url;
   playingId = idea.id;
   player.play().catch(()=>{});
@@ -1006,6 +1172,7 @@ function renderRack(){
   shown.forEach(idea=>{
     const card = document.createElement('div');
     card.className = 'idea-card';
+    card.dataset.id = idea.id;
 
     const playBtn = document.createElement('button');
     playBtn.type = 'button';
@@ -1043,6 +1210,7 @@ function renderRack(){
     card.appendChild(playBtn);
     card.appendChild(meta);
     card.appendChild(actions);
+    card.appendChild(makeScrub());
     ideaRack.appendChild(card);
   });
   refreshPlayButtons();
